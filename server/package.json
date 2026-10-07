@@ -1,0 +1,22 @@
+{
+  "name": "framerate-server",
+  "version": "1.0.0",
+  "description": "FrameRate party game server",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node smoke-test.js"
+  },
+  "dependencies": {
+    "express": "^5.2.1",
+    "multer": "^2.0.1",
+    "sharp": "^0.35.3",
+    "socket.io": "^4.8.3",
+    "uuid": "^11.1.0"
+  },
+  "devDependencies": {
+    "form-data": "^4.0.6",
+    "node-fetch": "^2.7.0",
+    "socket.io-client": "^4.8.4"
+  }
+}

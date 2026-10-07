@@ -1,0 +1,246 @@
+.app {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  padding-top: env(safe-area-inset-top, 0px);
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+.host-bar {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px 16px;
+}
+
+.end-game-button {
+  background: var(--danger);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 14px;
+}
+
+.screen {
+  flex: 1;
+  width: 100%;
+  max-width: 480px;
+  margin: 0 auto;
+  padding: 24px 20px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 16px;
+}
+
+h1 {
+  font-size: 28px;
+  margin: 8px 0;
+}
+
+h2 {
+  font-size: 18px;
+  color: var(--muted);
+  margin: 0 0 8px;
+}
+
+/* ---------- Join screen ---------- */
+
+.join-screen form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 100%;
+}
+
+.join-screen input {
+  padding: 16px;
+  font-size: 18px;
+  border-radius: 10px;
+  border: 1px solid #333;
+  background: var(--surface);
+  color: var(--text);
+}
+
+/* ---------- Generic buttons ---------- */
+
+button {
+  padding: 16px;
+  font-size: 18px;
+  border-radius: 10px;
+  border: none;
+  background: var(--accent);
+  color: white;
+  min-height: 52px;
+}
+
+button:disabled {
+  opacity: 0.5;
+}
+
+/* ---------- Lobby ---------- */
+
+.player-list {
+  width: 100%;
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.player-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.player-list li {
+  padding: 8px 0;
+  border-bottom: 1px solid #2a2a35;
+  font-size: 16px;
+}
+
+.player-list li.disconnected {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.host-controls {
+  width: 100%;
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.host-controls label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 16px;
+  gap: 10px;
+}
+
+.host-controls input[type='number'],
+.host-controls select {
+  padding: 10px;
+  border-radius: 8px;
+  border: 1px solid #333;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 16px;
+}
+
+/* ---------- Upload screen ---------- */
+
+.upload-button {
+  display: inline-block;
+  padding: 18px 28px;
+  background: var(--accent);
+  color: white;
+  border-radius: 12px;
+  font-size: 18px;
+}
+
+.upload-status-list {
+  width: 100%;
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.upload-status-list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  text-align: left;
+}
+
+.force-start {
+  background: transparent;
+  border: 1px solid var(--muted);
+  color: var(--muted);
+  font-size: 14px;
+  padding: 10px 16px;
+  min-height: 40px;
+}
+
+.error {
+  color: var(--danger);
+}
+
+/* ---------- Voting screen ---------- */
+
+.voting-photo,
+.result-photo {
+  width: 100%;
+  max-height: 55vh;
+  object-fit: contain;
+  border-radius: 12px;
+  background: #000;
+}
+
+.timer {
+  font-size: 32px;
+  font-weight: bold;
+}
+
+.score-buttons {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 8px;
+  width: 100%;
+}
+
+.score-buttons button {
+  padding: 18px 0;
+  font-size: 22px;
+}
+
+/* ---------- Result screen ---------- */
+
+.points {
+  font-size: 24px;
+  font-weight: bold;
+  color: var(--accent);
+}
+
+/* ---------- Leaderboard ---------- */
+
+.leaderboard {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.leaderboard li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: var(--surface);
+  border-radius: 10px;
+  padding: 14px 16px;
+  font-size: 18px;
+}
+
+.leaderboard .rank {
+  color: var(--muted);
+  width: 40px;
+  text-align: left;
+}
+
+.leaderboard .name {
+  flex: 1;
+  text-align: left;
+}
+
+.leaderboard .score {
+  font-weight: bold;
+}

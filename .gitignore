@@ -1,0 +1,5 @@
+node_modules/
+server/game-photos/*
+!server/game-photos/.gitkeep
+client/dist/
+.DS_Store
