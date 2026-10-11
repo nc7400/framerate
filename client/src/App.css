@@ -96,6 +96,9 @@ button:disabled {
 }
 
 .player-list li {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
   padding: 8px 0;
   border-bottom: 1px solid #2a2a35;
   font-size: 16px;
@@ -243,4 +246,55 @@ button:disabled {
 
 .leaderboard .score {
   font-weight: bold;
+}
+
+.kick-button {
+  padding: 8px 12px;
+  min-height: 0;
+  font-size: 13px;
+  background: var(--danger);
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+.between-rounds-screen .host-controls {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: transparent;
+  padding: 0;
+}
+
+.end-game-button-inline {
+  background: transparent;
+  border: 1px solid var(--danger);
+  color: var(--danger);
+}
+
+/* ---------- Rename form (lobby) ---------- */
+
+.rename-form {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.rename-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.rename-form input {
+  padding: 14px;
+  font-size: 18px;
+  border-radius: 10px;
+  border: 1px solid #333;
+  background: var(--surface);
+  color: var(--text);
 }

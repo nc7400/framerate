@@ -348,6 +348,20 @@ io.on('connection', (socket) => {
 
     const existing = playerId ? getPlayer(playerId) : null;
 
+    // Names must be unique (case-insensitive) among *other* players. The player's
+    // own record is excluded so refreshing/reconnecting with their current name,
+    // or "renaming" to a different capitalization of it, still works.
+    const nameTaken = players.some(
+      (p) =>
+        p.id !== (existing && existing.id) &&
+        p.username.toLowerCase() === trimmed.toLowerCase()
+    );
+    if (nameTaken) {
+      console.log(`[join] rejected: name "${trimmed}" already taken`);
+      socket.emit('joinError', `The name "${trimmed}" is already taken. Please choose another.`);
+      return;
+    }
+
     if (existing) {
       // Returning player (refresh, backgrounded tab, brief dropped connection) —
       // reclaim their existing record instead of creating a new one.
@@ -417,6 +431,32 @@ io.on('connection', (socket) => {
     if (!Number.isInteger(numericScore) || numericScore < 1 || numericScore > 5) return;
     votes[player.id] = numericScore;
     checkForEarlyClose();
+  });
+
+  socket.on('kickPlayer', (targetPlayerId) => {
+    if (!isHostConnection(socket)) return;
+    // Allowed in the pre-game lobby and on the between-rounds standings screen.
+    // Mid-vote or mid-upload removal would complicate eligible-voter counts
+    // and upload-progress tracking, so it's deliberately not allowed there.
+    if (status !== 'lobby' && status !== 'lobby-between-rounds') return;
+    if (targetPlayerId === hostId) return; // host can't kick themselves
+
+    const target = getPlayer(targetPlayerId);
+    if (!target) return;
+
+    players = players.filter((p) => p.id !== targetPlayerId);
+    console.log(`[kick] "${target.username}" (${target.id}) removed by host`);
+
+    // Notify and forcibly disconnect their live connection, if they have one.
+    if (target.socketId) {
+      const targetSocket = io.sockets.sockets.get(target.socketId);
+      if (targetSocket) {
+        targetSocket.emit('kicked');
+        targetSocket.disconnect(true);
+      }
+    }
+
+    broadcastState();
   });
 
   socket.on('endGame', () => {

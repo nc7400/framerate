@@ -112,6 +112,20 @@ npm test
   username, same score, same host status — instead of creating a new player.
   A disconnected player stays visible in the lobby/player list (marked
   "disconnected") rather than disappearing.
+- **Between rounds**: after each round (except the last), everyone sees a
+  standings screen showing current scores. The host gets a simpler control
+  set here than the pre-game lobby — just "Start Next Round" and "End Game"
+  (round count and timer length are locked in once the game has started).
+- **Names**: players can change their name from the pre-game lobby. Names
+  must be unique (case-insensitive); if a name is taken, the player sees a
+  message and keeps their current name (or can pick another on the join screen).
+- **Kicking players**: the host can remove a player from the pre-game lobby
+  or from the between-rounds standings screen. It's deliberately not
+  available mid-vote or mid-upload, where removing someone mid-flight would
+  complicate the "has everyone voted/uploaded" logic. A kicked player sees a dedicated
+  screen and is forcibly disconnected; if they reopen the page, it starts
+  them fresh as a new player rather than quietly trying to rejoin as the
+  player who was just removed.
 - **Host disconnects**: host status is intentionally *not* auto-transferred
   when the host disconnects, since that would demote them off of something
   as routine as a page refresh. The host keeps their controls the moment

@@ -50,6 +50,7 @@ export default function PhotoUpload({ state, isHost, myId }) {
           <input
             type="file"
             accept="image/*"
+            capture="environment"
             onChange={handleFileChange}
             disabled={uploading}
             hidden

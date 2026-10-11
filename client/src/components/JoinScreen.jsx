@@ -1,16 +1,18 @@
 import { useState, useEffect } from 'react';
 import { socket } from '../socket';
-import { storeUsername } from '../playerId';
+import { clearStoredUsername } from '../playerId';
 
 export default function JoinScreen({ myId }) {
   const [username, setUsername] = useState('');
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState('');
 
-  // If the server rejects the join attempt (or something goes wrong), un-stick
-  // the button instead of leaving it on "Joining..." forever.
+  // If the server rejects the join attempt (name already taken, game full, etc.),
+  // un-stick the button and show why. Also forget the rejected name so a page
+  // refresh doesn't keep retrying it.
   useEffect(() => {
     function handleJoinError(message) {
+      clearStoredUsername();
       setSubmitted(false);
       setError(message || 'Could not join — please try again.');
     }
@@ -23,7 +25,7 @@ export default function JoinScreen({ myId }) {
     const trimmed = username.trim();
     if (!trimmed) return;
     setError('');
-    storeUsername(trimmed);
+    // The name is saved locally only after the server confirms it (see App.jsx).
     socket.emit('join', { username: trimmed, playerId: myId });
     setSubmitted(true);
   }

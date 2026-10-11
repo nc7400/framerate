@@ -94,16 +94,59 @@ async function main() {
   const aliceOldSocket = alice;
   alice = aliceReconnectSocket;
 
-  console.log('--- Host sets settings: 1 round, 5s timer ---');
-  alice.emit('setSettings', { totalRounds: 1, voteDuration: 5 });
+  console.log('--- Testing kick during the pre-game lobby (status is still "lobby" here) ---');
+  assert(states.Alice.status === 'lobby', 'still in the pre-game lobby before settings/start');
+  const carolConn = await connectPlayer('Carol');
+  const carol = carolConn.sock;
+  await wait(300);
+  assert(states.Alice.players.length === 3, 'Carol joined, bringing the lobby to 3 players');
+
+  console.log('--- Testing duplicate-name rejection and renaming ---');
+  // A brand-new player trying a name that's taken (different capitalization).
+  const dupSock = io('http://localhost:3000', { transports: ['websocket'] });
+  let dupError = null;
+  dupSock.on('joinError', (msg) => (dupError = msg));
+  await new Promise((resolve) => dupSock.on('connect', resolve));
+  dupSock.emit('join', { username: 'aLiCe', playerId: 'test-dup-player' });
+  await wait(300);
+  assert(dupError !== null && dupError.includes('already taken'), `new join with a taken name is rejected (${dupError})`);
+  assert(states.Alice.players.length === 3, 'rejected duplicate did not add a player');
+  dupSock.disconnect();
+
+  // An existing player trying to rename to someone else's name.
+  let bobRenameError = null;
+  bob.on('joinError', (msg) => (bobRenameError = msg));
+  bob.emit('join', { username: 'Alice', playerId: bobConn.playerId });
+  await wait(300);
+  assert(bobRenameError !== null && bobRenameError.includes('already taken'), 'renaming to a taken name is rejected');
+  assert(states.Alice.players.find((p) => p.id === bobId).username === 'Bob', 'Bob keeps his name after a rejected rename');
+
+  // A valid rename (also confirms a player can "rename" to their own name's new casing).
+  bob.emit('join', { username: 'Bobby', playerId: bobConn.playerId });
+  await wait(300);
+  assert(states.Alice.players.find((p) => p.id === bobId).username === 'Bobby', 'valid rename to Bobby succeeds');
+  assert(states.Alice.players.length === 3, 'rename did not create a duplicate player');
+
+  let carolWasKicked = false;
+  carol.on('kicked', () => {
+    carolWasKicked = true;
+  });
+  alice.emit('kickPlayer', carolConn.playerId);
+  await wait(400);
+  assert(carolWasKicked === true, 'Carol received the "kicked" event while still in the lobby');
+  assert(carol.connected === false, "Carol's socket was forcibly disconnected");
+  assert(states.Alice.players.length === 2, 'Carol removed from the lobby, back down to Alice and Bob');
+
+  console.log('--- Host sets settings: 2 rounds, 5s timer ---');
+  alice.emit('setSettings', { totalRounds: 2, voteDuration: 5 });
   await wait(200);
-  assert(states.Alice.totalRounds === 1, 'totalRounds set to 1');
+  assert(states.Alice.totalRounds === 2, 'totalRounds set to 2');
   assert(states.Alice.voteDuration === 5, 'voteDuration set to 5');
 
-  console.log('--- Starting game ---');
+  console.log('--- Starting round 1 ---');
   alice.emit('startGame');
   await wait(300);
-  assert(states.Alice.status === 'uploading', 'status moved to uploading');
+  assert(states.Alice.status === 'uploading', 'status moved to uploading for round 1');
   assert(states.Alice.currentRound === 1, 'currentRound is 1');
 
   async function uploadPhotos(playerId, label) {
@@ -121,51 +164,101 @@ async function main() {
     }
   }
 
-  console.log('--- Uploading photos for both players ---');
-  await uploadPhotos(aliceId, 'alice');
-  await uploadPhotos(bobId, 'bob');
+  console.log('--- Uploading round 1 photos for both players ---');
+  await uploadPhotos(aliceId, 'alice-r1');
+  await uploadPhotos(bobId, 'bob-r1');
   await wait(500);
 
-  assert(states.Alice.status === 'voting', 'status moved to voting after all uploads');
+  assert(states.Alice.status === 'voting', 'status moved to voting after round 1 uploads');
   assert(states.Alice.currentPhoto !== null, 'a current photo is set');
 
-  console.log('--- Voting through all 6 photos ---');
-  let photosVoted = 0;
-  let lastVotedPhotoId = null;
-  const maxIterations = 200; // generous: 6 photos x ~4s result pause each + round-end pause
-  let iterations = 0;
-  while (states.Alice.status !== 'gameover' && iterations < maxIterations) {
-    iterations++;
-    if (
-      states.Alice.status === 'voting' &&
-      states.Alice.currentPhoto &&
-      states.Alice.currentPhoto.id !== lastVotedPhotoId
-    ) {
-      const photo = states.Alice.currentPhoto;
-      lastVotedPhotoId = photo.id;
-      const ownerId = photo.ownerId;
-      // Whoever doesn't own the photo votes.
-      if (ownerId !== aliceId) alice.emit('submitVote', 4);
-      if (ownerId !== bobId) bob.emit('submitVote', 2);
-      photosVoted++;
+  // Votes on every currently-shown photo until `predicate()` is true (used for
+  // both rounds). Alice votes 4 on anything she doesn't own, Bob votes 2 (while
+  // still connected) on anything he doesn't own.
+  async function voteUntil(predicate, maxIterations = 300) {
+    let votedCount = 0;
+    let lastVotedPhotoId = null;
+    let iterations = 0;
+    while (!predicate() && iterations < maxIterations) {
+      iterations++;
+      if (
+        states.Alice.status === 'voting' &&
+        states.Alice.currentPhoto &&
+        states.Alice.currentPhoto.id !== lastVotedPhotoId
+      ) {
+        const photo = states.Alice.currentPhoto;
+        lastVotedPhotoId = photo.id;
+        const ownerId = photo.ownerId;
+        if (ownerId !== aliceId) alice.emit('submitVote', 4);
+        if (ownerId !== bobId && bob.connected) bob.emit('submitVote', 2);
+        votedCount++;
+      }
+      await wait(300);
     }
-    await wait(300);
+    return votedCount;
   }
 
-  assert(photosVoted === 6, `voted on exactly 6 photos (voted on ${photosVoted})`);
-  assert(states.Alice.status === 'gameover', 'game reached gameover status');
+  console.log('--- Voting through round 1 (6 photos) ---');
+  const round1Votes = await voteUntil(() => states.Alice.status === 'lobby-between-rounds');
+  assert(round1Votes === 6, `voted on exactly 6 photos in round 1 (voted on ${round1Votes})`);
+  assert(states.Alice.status === 'lobby-between-rounds', 'reached the new between-rounds screen after round 1');
+
+  // Alice's photos: Bob votes 2 each => 2*1(mult)=2 per photo * 3 photos = 6
+  // Bob's photos: Alice votes 4 each => 4*1(mult)=4 per photo * 3 photos = 12
+  const aliceAfterR1 = states.Alice.players.find((p) => p.id === aliceId).totalScore;
+  const bobAfterR1 = states.Alice.players.find((p) => p.id === bobId).totalScore;
+  assert(aliceAfterR1 === 6, `Alice's score after round 1 is 6 (got ${aliceAfterR1})`);
+  assert(bobAfterR1 === 12, `Bob's score after round 1 is 12 (got ${bobAfterR1})`);
+
+  console.log('--- Testing kick permissions ---');
+  bob.emit('kickPlayer', aliceId); // non-host attempting to kick: should be ignored
+  await wait(300);
+  assert(states.Alice.players.length === 2, 'non-host kick attempt had no effect');
+
+  alice.emit('kickPlayer', aliceId); // host attempting to kick themself: should be ignored
+  await wait(300);
+  assert(states.Alice.players.length === 2, 'host cannot kick themself');
+
+  console.log('--- Testing a real kick (host removes Bob) ---');
+  let bobWasKicked = false;
+  bob.on('kicked', () => {
+    bobWasKicked = true;
+  });
+  alice.emit('kickPlayer', bobId);
+  await wait(400);
+  assert(bobWasKicked === true, 'Bob received the "kicked" event');
+  assert(bob.connected === false, "Bob's socket was forcibly disconnected");
+  assert(states.Alice.players.length === 1, 'Bob removed from the player list after kick');
+  assert(
+    states.Alice.players.find((p) => p.id === bobId) === undefined,
+    'Bob no longer appears anywhere in state'
+  );
+
+  console.log('--- Starting round 2 with only Alice remaining ---');
+  alice.emit('startGame');
+  await wait(300);
+  assert(states.Alice.status === 'uploading', 'status moved to uploading for round 2');
+  assert(states.Alice.currentRound === 2, 'currentRound is 2');
+
+  await uploadPhotos(aliceId, 'alice-r2');
+  await wait(500);
+  assert(states.Alice.status === 'voting', 'status moved to voting for round 2 (Alice-only)');
+
+  console.log('--- Voting through round 2 (3 photos, zero eligible voters -> times out each photo) ---');
+  const round2Votes = await voteUntil(() => states.Alice.status === 'gameover');
+  assert(round2Votes === 3, `voted on exactly 3 photos in round 2 (voted on ${round2Votes})`);
+  assert(states.Alice.status === 'gameover', 'game reached gameover after round 2');
   assert(Array.isArray(states.Alice.leaderboard), 'leaderboard is present');
 
   console.log('--- Final leaderboard ---');
   console.log(states.Alice.leaderboard);
 
-  // Each player owns 3 photos, each photo voted by the other player.
-  // Alice's photos: Bob votes 2 each => 2*1(mult)=2 per photo * 3 photos = 6
-  // Bob's photos: Alice votes 4 each => 4*1(mult)=4 per photo * 3 photos = 12
-  const aliceScore = states.Alice.leaderboard.find((p) => p.username === 'Alice').totalScore;
-  const bobScore = states.Alice.leaderboard.find((p) => p.username === 'Bob').totalScore;
-  assert(aliceScore === 6, `Alice's score is 6 (got ${aliceScore})`);
-  assert(bobScore === 12, `Bob's score is 12 (got ${bobScore})`);
+  // Round 2: Alice owns all 3 photos and is the only player left, so there are
+  // zero eligible voters for each - each photo earns 0 points (and each one
+  // waits out the full 5s timer rather than early-closing).
+  assert(states.Alice.leaderboard.length === 1, 'leaderboard only contains Alice (Bob was kicked)');
+  const aliceFinalScore = states.Alice.leaderboard.find((p) => p.username === 'Alice').totalScore;
+  assert(aliceFinalScore === 6, `Alice's final score is still 6 from round 1 (got ${aliceFinalScore})`);
 
   console.log('--- Testing newGame cleanup ---');
   alice.emit('newGame');
