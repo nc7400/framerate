@@ -118,6 +118,18 @@ npm test
   username, same score, same host status — instead of creating a new player.
   A disconnected player stays visible in the lobby/player list (marked
   "disconnected") rather than disappearing.
+- **Ties and medals**: players with the same score share one rank and are
+  listed together, separated by commas. First place gets 🥇, second 🥈, third 🥉
+  (ranks are consecutive, so a tie for first is followed by the 🥈 group).
+- **Best photos**: at the end of every round (including the final one), the
+  round's best photo is shown to everyone. That's the photo with the most
+  points that round, and if several photos are tied for the top score, all of
+  them are shown. Photos nobody voted on never count. After the last round,
+  the final screen shows the best-rated photo of each first-place player,
+  where "best rated" means the highest average rating (ties go to the photo
+  with more votes, then the one shown first).
+- **Final round**: after the last round the screen says the game is over and
+  final scores are coming, instead of "get ready for the next round".
 - **Between rounds**: after each round (except the last), everyone sees a
   standings screen showing current scores. The host gets a simpler control
   set here than the pre-game lobby — just "Start Next Round" and "End Game"

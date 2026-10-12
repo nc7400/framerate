@@ -58,7 +58,7 @@ export default function PhotoUpload({ state, isHost, myId }) {
           />
         </label>
       )}
-      {done && <p>All players are done uploading!</p>}
+      {done && <p>You're all set — waiting on other players...</p>}
       {error && <p className="error">{error}</p>}
 
       <div className="upload-status-list">

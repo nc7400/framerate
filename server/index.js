@@ -51,6 +51,8 @@ let voteTimer = null;    // Node timeout handle
 let uploadCounts = {};   // playerId -> number of photos uploaded this round
 let lastResult = null;   // { photoUrl, ownerUsername, pointsAwarded }
 let leaderboard = null;  // sorted players array, set at gameover
+let gamePhotoResults = []; // every photo's final tally this game (kept across rounds)
+let winnerPhotos = [];   // best-rated photo of each first-place player, set at gameover
 
 function getPlayer(id) {
   return players.find((p) => p.id === id);
@@ -89,6 +91,8 @@ function resetFullGameState({ clearPlayers } = { clearPlayers: false }) {
   photosPerRound = DEFAULT_PHOTOS_PER_ROUND;
   currentRound = 0;
   leaderboard = null;
+  gamePhotoResults = [];
+  winnerPhotos = [];
   resetPerRoundState();
   if (clearPlayers) {
     players = [];
@@ -119,6 +123,7 @@ function buildStateSnapshot() {
     deadline,
     lastResult,
     leaderboard,
+    winnerPhotos,
     photosRemainingInRound: photoQueue.length + (currentPhoto ? 1 : 0),
     uploadStatus: players.map((p) => ({
       id: p.id,
@@ -191,6 +196,33 @@ function checkForEarlyClose() {
   }
 }
 
+// "Best rated" = highest average rating; ties go to the photo with more votes,
+// then to whichever was shown first. Photos nobody voted on are never "best".
+function isBetterPhoto(a, b) {
+  const lhs = a.rawTotal * b.voteCount; // compare averages without float rounding
+  const rhs = b.rawTotal * a.voteCount;
+  if (lhs !== rhs) return lhs > rhs;
+  return a.voteCount > b.voteCount;
+}
+
+function pickBestPhoto(candidates) {
+  let best = null;
+  for (const c of candidates) {
+    if (c.voteCount === 0) continue;
+    if (!best || isBetterPhoto(c, best)) best = c;
+  }
+  return best;
+}
+
+// Best photo(s) of a round = the most points that round (the same number players
+// see on the per-photo result screen; the multiplier is constant within a round).
+// Every photo tied for the top is returned, not just one. Unrated photos never count.
+function pickBestPhotosOfRound(round) {
+  const rated = gamePhotoResults.filter((r) => r.round === round && r.voteCount > 0);
+  const topPoints = rated.reduce((max, r) => Math.max(max, r.points), 0);
+  return rated.filter((r) => r.points === topPoints);
+}
+
 function closeCurrentPhotoVoting() {
   if (voteTimer) {
     clearTimeout(voteTimer);
@@ -208,6 +240,19 @@ function closeCurrentPhotoVoting() {
   if (owner) {
     owner.totalScore += pointsAwarded;
   }
+
+  const voteValues = Object.values(votes);
+  const rawTotal = voteValues.reduce((sum, v) => sum + v, 0);
+  gamePhotoResults.push({
+    url: currentPhoto.url,
+    ownerId: currentPhoto.ownerId,
+    ownerUsername: owner ? owner.username : 'Unknown',
+    round: currentRound,
+    points: pointsAwarded,
+    voteCount: voteValues.length,
+    rawTotal,
+    average: voteValues.length ? rawTotal / voteValues.length : 0,
+  });
 
   lastResult = {
     photoUrl: currentPhoto.url,
@@ -231,7 +276,19 @@ function closeCurrentPhotoVoting() {
 function endRound() {
   currentPhoto = null;
   status = 'result';
-  lastResult = { roundComplete: true, round: currentRound };
+  lastResult = {
+    roundComplete: true,
+    round: currentRound,
+    final: currentRound >= totalRounds,
+    // All photos tied for the round's top score (empty if nothing was rated).
+    bestPhotos: pickBestPhotosOfRound(currentRound).map((r) => ({
+      url: r.url,
+      ownerUsername: r.ownerUsername,
+      points: r.points,
+      average: r.average,
+      voteCount: r.voteCount,
+    })),
+  };
   broadcastState();
 
   setTimeout(() => {
@@ -242,13 +299,35 @@ function endRound() {
       status = 'lobby-between-rounds';
       broadcastState();
     }
-  }, 3000);
+  }, 7000); // long enough to look at the round's best photo
 }
 
 function endGame() {
   leaderboard = [...players]
     .sort((a, b) => b.totalScore - a.totalScore)
     .map((p) => ({ username: p.username, totalScore: p.totalScore }));
+
+  // Best-rated photo of each first-place player (several if there's a tie).
+  const topScore = players.reduce((max, p) => Math.max(max, p.totalScore), 0);
+  winnerPhotos =
+    topScore > 0
+      ? players
+          .filter((p) => p.totalScore === topScore)
+          .map((p) => {
+            const best = pickBestPhoto(gamePhotoResults.filter((r) => r.ownerId === p.id));
+            return best
+              ? {
+                  username: p.username,
+                  url: best.url,
+                  average: best.average,
+                  voteCount: best.voteCount,
+                  round: best.round,
+                }
+              : null;
+          })
+          .filter(Boolean)
+      : [];
+
   status = 'gameover';
   resetPerRoundState();
   broadcastState();

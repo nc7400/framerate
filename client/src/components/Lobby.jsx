@@ -45,13 +45,9 @@ export default function Lobby({ state, isHost, myId }) {
     });
   }
 
-function handleStart() {
-  socket.emit('startGame', {
-    totalRounds: rounds,
-    voteDuration: duration,
-    photosPerRound: photos,
-  });
-}
+  function handleStart() {
+    socket.emit('startGame');
+  }
 
   function handleLeave() {
     if (confirm('Leave the game? You will be removed from the player list.')) {

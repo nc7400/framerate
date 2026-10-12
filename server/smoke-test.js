@@ -30,6 +30,14 @@ async function main() {
   await wait(300);
 
   const states = {};
+  // Remembers each round's end-of-round result (it only shows briefly before the
+  // game moves on), keyed by round number.
+  const roundCompleteByRound = {};
+  function captureRoundComplete(s) {
+    if (s.lastResult && s.lastResult.roundComplete) {
+      roundCompleteByRound[s.lastResult.round] = s.lastResult;
+    }
+  }
   function connectPlayer(name) {
     const sock = io('http://localhost:3000', { transports: ['websocket'] });
     const playerId = `test-${name}-${Math.random().toString(36).slice(2, 8)}`;
@@ -37,6 +45,7 @@ async function main() {
       sock.on('connect', () => {
         sock.on('state', (s) => {
           states[name] = s;
+          captureRoundComplete(s);
         });
         sock.emit('join', { username: name, playerId });
         resolve({ sock, playerId });
@@ -80,7 +89,10 @@ async function main() {
   const aliceReconnectSocket = io('http://localhost:3000', { transports: ['websocket'] });
   await new Promise((resolve) => {
     aliceReconnectSocket.on('connect', () => {
-      aliceReconnectSocket.on('state', (s) => (states.Alice = s));
+      aliceReconnectSocket.on('state', (s) => {
+        states.Alice = s;
+        captureRoundComplete(s);
+      });
       aliceReconnectSocket.emit('join', { username: 'Alice', playerId: aliceConn.playerId });
       resolve();
     });
@@ -256,6 +268,15 @@ async function main() {
   assert(aliceAfterR1 === 2 * PHOTOS, `Alice's score after round 1 is ${2 * PHOTOS} (got ${aliceAfterR1})`);
   assert(bobAfterR1 === 4 * PHOTOS, `Bob's score after round 1 is ${4 * PHOTOS} (got ${bobAfterR1})`);
 
+  console.log('--- Checking the end-of-round best photo (round 1) ---');
+  const r1 = roundCompleteByRound[1];
+  assert(r1 && r1.final === false, 'round 1 end result is marked as not the final round');
+  // Both of Bob's photos got a 4 from Alice (4 points each), so they TIE for best
+  // of the round and both must be shown (Alice's photos only got 2s).
+  assert(r1 && r1.bestPhotos.length === PHOTOS, `all ${PHOTOS} tied best photos are included, not just one (got ${r1 && r1.bestPhotos.length})`);
+  assert(r1 && r1.bestPhotos.every((b) => b.ownerUsername === 'Bobby' && b.points === 4), "tied best photos are Bobby's, 4 points each");
+  assert(r1 && new Set(r1.bestPhotos.map((b) => b.url)).size === PHOTOS, 'the tied best photos are distinct photos');
+
   console.log('--- Testing kick permissions ---');
   bob.emit('kickPlayer', aliceId); // non-host attempting to kick: should be ignored
   await wait(300);
@@ -298,6 +319,18 @@ async function main() {
   assert(states.Alice.status === 'gameover', 'game reached gameover after round 2');
   assert(Array.isArray(states.Alice.leaderboard), 'leaderboard is present');
 
+  const r2 = roundCompleteByRound[2];
+  assert(r2 && r2.final === true, 'round 2 end result is marked as the final round');
+  assert(r2 && r2.bestPhotos.length === 0, 'no best photos in round 2 (nobody was left to vote)');
+  assert(
+    states.Alice.winnerPhotos.length === 1 && states.Alice.winnerPhotos[0].username === 'Alice',
+    'winner photo is shown for the single first-place player'
+  );
+  assert(
+    states.Alice.winnerPhotos[0].round === 1 && Math.abs(states.Alice.winnerPhotos[0].average - 2) < 1e-9,
+    "winner's best photo comes from round 1 (the only round her photos were rated), average 2"
+  );
+
   console.log('--- Final leaderboard ---');
   console.log(states.Alice.leaderboard);
 
@@ -325,6 +358,7 @@ async function main() {
   const fs = require('fs');
   const photosDir = path.join(__dirname, 'game-photos');
   const remainingFiles = fs.readdirSync(photosDir);
+  assert(states.Alice.winnerPhotos.length === 0, 'winner photos cleared by newGame');
   assert(remainingFiles.length === 0, `photo directory is empty after newGame (found ${remainingFiles.length})`);
 
   console.log('--- Testing leaving the pre-game lobby ---');

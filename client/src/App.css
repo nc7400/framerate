@@ -223,6 +223,7 @@ button:disabled {
   border-radius: 10px;
   padding: 14px 16px;
   font-size: 18px;
+  gap: 12px;
 }
 
 .leaderboard .rank {
@@ -238,6 +239,7 @@ button:disabled {
 
 .leaderboard .score {
   font-weight: bold;
+  white-space: nowrap;
 }
 
 .kick-button {
@@ -326,4 +328,61 @@ button:disabled {
   color: var(--muted);
   font-size: 14px;
   margin: 0;
+}
+
+/* ---------- Ties, best-photo showcases ---------- */
+
+
+
+.leaderboard .name .member {
+  display: block;
+}
+
+.leaderboard .name .member + .member {
+  margin-top: 6px;
+}
+
+.leaderboard .name .kick-button {
+  margin-left: 6px;
+  margin-right: 2px;
+}
+
+.leaderboard .rank {
+  font-size: 22px;
+}
+
+.best-photo {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Tied best photos sit side by side in a 2-column grid; a single photo is full width. */
+.best-photo-grid {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+
+.best-photo-grid.tie {
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.best-photo-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.best-photo-grid.tie .result-photo {
+  max-height: 30vh;
+}
+
+.best-photo-grid.tie .points {
+  font-size: 18px;
 }

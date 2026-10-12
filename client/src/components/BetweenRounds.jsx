@@ -1,7 +1,8 @@
 import { socket } from '../socket';
+import { groupByRank, rankLabel } from '../ranking';
 
 export default function BetweenRounds({ state, isHost }) {
-  const standings = [...state.players].sort((a, b) => b.totalScore - a.totalScore);
+  const groups = groupByRank(state.players);
 
   function handleKick(player) {
     if (confirm(`Remove ${player.username} from the game?`)) {
@@ -25,20 +26,24 @@ export default function BetweenRounds({ state, isHost }) {
       <h2>Standings</h2>
 
       <ol className="leaderboard">
-        {standings.map((p, i) => (
-          <li key={p.id}>
-            <span className="rank">#{i + 1}</span>
+        {groups.map((group) => (
+          <li key={group.rank}>
+            <span className="rank">{rankLabel(group.rank)}</span>
             <span className="name">
-              {p.username}
-              {p.isHost ? ' (Host)' : ''}
-              {!p.connected ? ' — disconnected' : ''}
+              {group.members.map((p) => (
+                <span key={p.id} className="member">
+                  {p.username}
+                  {p.isHost ? ' (Host)' : ''}
+                  {!p.connected ? ' — disconnected' : ''}
+                  {isHost && !p.isHost && (
+                    <button className="kick-button" onClick={() => handleKick(p)}>
+                      Kick
+                    </button>
+                  )}
+                </span>
+              ))}
             </span>
-            <span className="score">{p.totalScore} pts</span>
-            {isHost && !p.isHost && (
-              <button className="kick-button" onClick={() => handleKick(p)}>
-                Kick
-              </button>
-            )}
+            <span className="score">{group.totalScore} pts</span>
           </li>
         ))}
       </ol>

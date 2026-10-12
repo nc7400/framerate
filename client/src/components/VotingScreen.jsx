@@ -21,7 +21,7 @@ export default function VotingScreen({ state, myId }) {
   useEffect(() => {
     if (!state.deadline) return;
     const tick = () => {
-      const remaining = Math.max(0, Math.round((state.deadline - Date.now()) / 1000));
+      const remaining = Math.max(0, Math.ceil((state.deadline - Date.now()) / 1000));
       setSecondsLeft(remaining);
     };
     tick();
