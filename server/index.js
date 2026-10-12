@@ -32,7 +32,8 @@ const upload = multer({
 // In-memory game state. Everything here is wiped on "New Game" / server restart.
 // ---------------------------------------------------------------------------
 const MAX_PLAYERS = 10;
-const PHOTOS_PER_PLAYER_PER_ROUND = 3;
+const DEFAULT_PHOTOS_PER_ROUND = 3;
+const MAX_PHOTOS_PER_ROUND = 5;
 const ALLOWED_DURATIONS = [5, 10, 15, 20];
 
 let players = [];        // { id, username, isHost, totalScore, connected }
@@ -40,6 +41,7 @@ let hostId = null;
 let status = 'lobby';    // lobby | uploading | voting | result | gameover
 let totalRounds = 3;
 let voteDuration = 15;
+let photosPerRound = DEFAULT_PHOTOS_PER_ROUND; // photos each player uploads per round (host-selectable, 1-5)
 let currentRound = 0;
 let photoQueue = [];     // photos still to be voted on this round
 let currentPhoto = null; // { id, ownerId, url }
@@ -84,6 +86,7 @@ function resetFullGameState({ clearPlayers } = { clearPlayers: false }) {
   status = 'lobby';
   totalRounds = 3;
   voteDuration = 15;
+  photosPerRound = DEFAULT_PHOTOS_PER_ROUND;
   currentRound = 0;
   leaderboard = null;
   resetPerRoundState();
@@ -111,6 +114,7 @@ function buildStateSnapshot() {
     totalRounds,
     currentRound,
     voteDuration,
+    photosPerRound,
     currentPhoto,
     deadline,
     lastResult,
@@ -120,7 +124,7 @@ function buildStateSnapshot() {
       id: p.id,
       username: p.username,
       count: uploadCounts[p.id] || 0,
-      required: PHOTOS_PER_PLAYER_PER_ROUND,
+      required: photosPerRound,
     })),
   };
 }
@@ -138,22 +142,6 @@ function startRound() {
   resetPerRoundState();
   status = 'uploading';
   broadcastState();
-}
-
-function allPlayersUploaded() {
-  const connectedPlayers = players.filter((p) => p.connected);
-  return (
-    connectedPlayers.length > 0 &&
-    connectedPlayers.every(
-      (p) => (uploadCounts[p.id] || 0) >= PHOTOS_PER_PLAYER_PER_ROUND
-    )
-  );
-}
-
-function beginVotingPhaseIfReady() {
-  if (status !== 'uploading') return;
-  if (!allPlayersUploaded()) return;
-  beginVotingPhase();
 }
 
 function beginVotingPhase() {
@@ -279,7 +267,7 @@ app.post('/api/upload', upload.single('photo'), async (req, res) => {
     if (status !== 'uploading') {
       return res.status(400).json({ error: 'Not currently accepting uploads' });
     }
-    if ((uploadCounts[playerId] || 0) >= PHOTOS_PER_PLAYER_PER_ROUND) {
+    if ((uploadCounts[playerId] || 0) >= photosPerRound) {
       return res.status(400).json({ error: 'Already uploaded max photos this round' });
     }
     if (!req.file) {
@@ -307,7 +295,6 @@ app.post('/api/upload', upload.single('photo'), async (req, res) => {
 
     uploadCounts[playerId] = (uploadCounts[playerId] || 0) + 1;
     broadcastState();
-    beginVotingPhaseIfReady();
 
     res.json({ ok: true, count: uploadCounts[playerId] });
   } catch (err) {
@@ -397,13 +384,16 @@ io.on('connection', (socket) => {
     broadcastState();
   });
 
-  socket.on('setSettings', ({ totalRounds: rounds, voteDuration: duration }) => {
+  socket.on('setSettings', ({ totalRounds: rounds, voteDuration: duration, photosPerRound: photos } = {}) => {
     if (!isHostConnection(socket) || status !== 'lobby') return;
     if (Number.isInteger(rounds) && rounds >= 1 && rounds <= 20) {
       totalRounds = rounds;
     }
     if (ALLOWED_DURATIONS.includes(duration)) {
       voteDuration = duration;
+    }
+    if (Number.isInteger(photos) && photos >= 1 && photos <= MAX_PHOTOS_PER_ROUND) {
+      photosPerRound = photos;
     }
     broadcastState();
   });
@@ -414,8 +404,9 @@ io.on('connection', (socket) => {
     startRound();
   });
 
-  socket.on('forceStartVoting', () => {
-    // Host can force voting to begin even if not everyone uploaded.
+  socket.on('startVoting', () => {
+    // Voting never starts on its own: the host chooses when. They can start as
+    // soon as at least one photo is in (stragglers simply won't have photos).
     if (!isHostConnection(socket) || status !== 'uploading') return;
     if (photoQueue.filter((p) => p.roundAssigned === currentRound).length === 0) return;
     beginVotingPhase();
@@ -456,6 +447,30 @@ io.on('connection', (socket) => {
       }
     }
 
+    broadcastState();
+  });
+
+  socket.on('leaveGame', () => {
+    // Only offered in the pre-game lobby. Once a game is underway, leaving would
+    // complicate vote/upload tracking (same reason kicking is limited).
+    if (status !== 'lobby') return;
+    const leaver = getPlayerBySocket(socket.id);
+    if (!leaver) return;
+
+    players = players.filter((p) => p.id !== leaver.id);
+    console.log(`[leave] "${leaver.username}" (${leaver.id}) left the lobby`);
+
+    // If the host leaves, hand host status to the next player (preferring one who
+    // is connected) so the lobby always has someone who can start the game.
+    if (leaver.id === hostId) {
+      const nextHost = players.find((p) => p.connected) || players[0];
+      players.forEach((p) => (p.isHost = Boolean(nextHost) && p.id === nextHost.id));
+      hostId = nextHost ? nextHost.id : null;
+      if (nextHost) console.log(`[leave] host passed to "${nextHost.username}"`);
+    }
+
+    socket.emit('left');
+    socket.disconnect(true);
     broadcastState();
   });
 

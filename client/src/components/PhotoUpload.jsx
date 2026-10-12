@@ -9,6 +9,8 @@ export default function PhotoUpload({ state, isHost, myId }) {
   const myCount = myStatus ? myStatus.count : 0;
   const required = myStatus ? myStatus.required : 3;
   const done = myCount >= required;
+  const allDone = state.uploadStatus.every((u) => u.count >= u.required);
+  const totalUploaded = state.uploadStatus.reduce((sum, u) => sum + u.count, 0);
 
   async function handleFileChange(e) {
     const file = e.target.files[0];
@@ -50,35 +52,45 @@ export default function PhotoUpload({ state, isHost, myId }) {
           <input
             type="file"
             accept="image/*"
-            capture="environment"
             onChange={handleFileChange}
             disabled={uploading}
             hidden
           />
         </label>
       )}
-      {done && <p>You're all set — waiting on other players...</p>}
+      {done && <p>All players are done uploading!</p>}
       {error && <p className="error">{error}</p>}
 
       <div className="upload-status-list">
         <h2>Everyone's progress</h2>
         <ul>
-          {state.uploadStatus.map((u) => (
-            <li key={u.id}>
-              {u.username}: {u.count}/{u.required}
-            </li>
-          ))}
+          {state.uploadStatus.map((u) => {
+            const finished = u.count >= u.required;
+            return (
+              <li key={u.id} className={finished ? 'upload-done' : 'upload-pending'}>
+                {u.username}: {u.count}/{u.required}
+              </li>
+            );
+          })}
         </ul>
       </div>
 
       {isHost && (
-        <button
-          className="force-start"
-          onClick={() => socket.emit('forceStartVoting')}
-        >
-          Start voting now (skip stragglers)
-        </button>
+        <div className="start-voting">
+          <button
+            onClick={() => socket.emit('startVoting')}
+            disabled={totalUploaded === 0}
+          >
+            Start Voting
+          </button>
+          <p className="hint">
+            {allDone
+              ? 'Everyone has uploaded their photos.'
+              : 'Some players are still uploading. Anyone who isn\'t finished when you start will have fewer photos in the game.'}
+          </p>
+        </div>
       )}
+      {!isHost && allDone && <p>Waiting for the host to start voting...</p>}
     </div>
   );
 }

@@ -2,6 +2,8 @@ import { useState, useEffect } from 'react';
 import { socket } from '../socket';
 
 const DURATION_OPTIONS = [5, 10, 15, 20];
+const PHOTO_OPTIONS = [1, 2, 3, 4, 5];
+const ROUND_OPTIONS = [1, 2, 3, 4, 5];
 
 export default function Lobby({ state, isHost, myId }) {
   const me = state.players.find((p) => p.id === myId);
@@ -9,10 +11,12 @@ export default function Lobby({ state, isHost, myId }) {
   const [nameError, setNameError] = useState('');
   const [rounds, setRounds] = useState(state.totalRounds);
   const [duration, setDuration] = useState(state.voteDuration);
+  const [photos, setPhotos] = useState(state.photosPerRound);
 
   // Keep local controls in sync if settings change from elsewhere.
   useEffect(() => setRounds(state.totalRounds), [state.totalRounds]);
   useEffect(() => setDuration(state.voteDuration), [state.voteDuration]);
+  useEffect(() => setPhotos(state.photosPerRound), [state.photosPerRound]);
 
   // Show the server's reason if a rename is rejected (e.g. name already taken).
   useEffect(() => {
@@ -33,12 +37,26 @@ export default function Lobby({ state, isHost, myId }) {
     socket.emit('join', { username: trimmed, playerId: myId });
   }
 
-  function applySettings(nextRounds, nextDuration) {
-    socket.emit('setSettings', { totalRounds: nextRounds, voteDuration: nextDuration });
+  function applySettings(nextRounds, nextDuration, nextPhotos) {
+    socket.emit('setSettings', {
+      totalRounds: nextRounds,
+      voteDuration: nextDuration,
+      photosPerRound: nextPhotos,
+    });
   }
 
-  function handleStart() {
-    socket.emit('startGame');
+function handleStart() {
+  socket.emit('startGame', {
+    totalRounds: rounds,
+    voteDuration: duration,
+    photosPerRound: photos,
+  });
+}
+
+  function handleLeave() {
+    if (confirm('Leave the game? You will be removed from the player list.')) {
+      socket.emit('leaveGame');
+    }
   }
 
   function handleKick(player) {
@@ -95,18 +113,18 @@ export default function Lobby({ state, isHost, myId }) {
           <h2>Host Settings</h2>
           <label>
             Rounds:{' '}
-            <input
-              type="number"
-              min={1}
-              max={5}
+            <select
               value={rounds}
-              disabled={!isHost}
               onChange={(e) => {
                 const val = Number(e.target.value);
                 setRounds(val);
-                applySettings(val, duration);
-              }}
-            />
+                applySettings(val, duration, photos);
+            }}
+            >
+              {ROUND_OPTIONS.map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
           </label>
 
           <label>
@@ -116,12 +134,30 @@ export default function Lobby({ state, isHost, myId }) {
               onChange={(e) => {
                 const val = Number(e.target.value);
                 setDuration(val);
-                applySettings(rounds, val);
+                applySettings(rounds, val, photos);
               }}
             >
               {DURATION_OPTIONS.map((d) => (
                 <option key={d} value={d}>
                   {d} seconds
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label>
+            Photos per player each round:{' '}
+            <select
+              value={photos}
+              onChange={(e) => {
+                const val = Number(e.target.value);
+                setPhotos(val);
+                applySettings(rounds, duration, val);
+              }}
+            >
+              {PHOTO_OPTIONS.map((n) => (
+                <option key={n} value={n}>
+                  {n}
                 </option>
               ))}
             </select>
@@ -134,6 +170,10 @@ export default function Lobby({ state, isHost, myId }) {
       )}
 
       {!isHost && <p>Waiting for the host to start the game...</p>}
+
+      <button className="leave-button" onClick={handleLeave}>
+        Leave Game
+      </button>
     </div>
   );
 }

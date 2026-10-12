@@ -2,7 +2,7 @@
 
 A locally-hosted, browser-based party game for up to 10 players. Everyone
 joins on their phone over Wi-Fi, the host runs the game, each round players
-upload 3 photos, and the group scores each other's photos 1-5. Points per
+upload photos (the host chooses 1-5), and the group scores each other's photos 1-5. Points per
 vote are multiplied by the current round number (round 1 = x1, round 2 = x2,
 round 3 = x3, ...). Highest total score at the end wins.
 
@@ -99,7 +99,13 @@ npm test
 - **Timer**: host-selectable, 30/45/60/75/90 seconds, enforced authoritatively
   on the server (not trusted from the client). Voting closes early the
   instant every eligible player has voted.
-- **No repeats**: each round requires a fresh set of 3 uploads per player, so
+- **Photos per round**: the host picks 1-5 photos per player per round in the
+  pre-game lobby (default 3). Settings lock once the game starts.
+- **Starting voting**: voting never starts on its own. During uploads, each
+  player's name is greyed out until they've uploaded the required number, then
+  fills in. The host presses "Start Voting" when ready (they can start before
+  everyone finishes, in which case stragglers just have fewer photos).
+- **No repeats**: each round requires a fresh set of uploads per player, so
   there's no need to pull from a shared pool across rounds.
 - **Cleanup**: "New Game" wipes all photos from disk, resets all scores to 0,
   and returns everyone to the lobby. "End Game" can be triggered by the host
@@ -119,6 +125,10 @@ npm test
 - **Names**: players can change their name from the pre-game lobby. Names
   must be unique (case-insensitive); if a name is taken, the player sees a
   message and keeps their current name (or can pick another on the join screen).
+- **Leaving**: any player can leave from the pre-game lobby with the "Leave
+  Game" button. They're removed from the player list and disconnected, and
+  reopening the page starts them fresh. If the host leaves, host status passes
+  to the next player. Leaving isn't offered once a game has started.
 - **Kicking players**: the host can remove a player from the pre-game lobby
   or from the between-rounds standings screen. It's deliberately not
   available mid-vote or mid-upload, where removing someone mid-flight would

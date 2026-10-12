@@ -162,14 +162,6 @@ button:disabled {
   text-align: left;
 }
 
-.force-start {
-  background: transparent;
-  border: 1px solid var(--muted);
-  color: var(--muted);
-  font-size: 14px;
-  padding: 10px 16px;
-  min-height: 40px;
-}
 
 .error {
   color: var(--danger);
@@ -297,4 +289,41 @@ button:disabled {
   border: 1px solid #333;
   background: var(--surface);
   color: var(--text);
+}
+
+.leave-button {
+  background: transparent;
+  border: 1px solid var(--muted);
+  color: var(--muted);
+  margin-top: 8px;
+}
+
+/* ---------- Upload progress: greyed out until a player finishes ---------- */
+
+.upload-status-list li {
+  padding: 6px 0;
+  transition: opacity 0.2s, color 0.2s;
+}
+
+.upload-status-list li.upload-pending {
+  opacity: 0.4;
+}
+
+.upload-status-list li.upload-done {
+  opacity: 1;
+  color: var(--text);
+  font-weight: bold;
+}
+
+.start-voting {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 14px;
+  margin: 0;
 }

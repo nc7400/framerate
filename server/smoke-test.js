@@ -142,6 +142,22 @@ async function main() {
   await wait(200);
   assert(states.Alice.totalRounds === 2, 'totalRounds set to 2');
   assert(states.Alice.voteDuration === 5, 'voteDuration set to 5');
+  assert(states.Alice.photosPerRound === 3, 'photosPerRound defaults to 3');
+
+  console.log('--- Host chooses photos per round (1-5) ---');
+  alice.emit('setSettings', { totalRounds: 2, voteDuration: 5, photosPerRound: 6 });
+  await wait(200);
+  assert(states.Alice.photosPerRound === 3, 'photosPerRound above 5 is rejected');
+  alice.emit('setSettings', { totalRounds: 2, voteDuration: 5, photosPerRound: 0 });
+  await wait(200);
+  assert(states.Alice.photosPerRound === 3, 'photosPerRound below 1 is rejected');
+  bob.emit('setSettings', { totalRounds: 2, voteDuration: 5, photosPerRound: 4 });
+  await wait(200);
+  assert(states.Alice.photosPerRound === 3, 'non-host cannot change photosPerRound');
+  alice.emit('setSettings', { totalRounds: 2, voteDuration: 5, photosPerRound: 2 });
+  await wait(200);
+  assert(states.Alice.photosPerRound === 2, 'host sets photosPerRound to 2');
+  const PHOTOS = 2;
 
   console.log('--- Starting round 1 ---');
   alice.emit('startGame');
@@ -150,7 +166,7 @@ async function main() {
   assert(states.Alice.currentRound === 1, 'currentRound is 1');
 
   async function uploadPhotos(playerId, label) {
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < PHOTOS; i++) {
       const buf = await makeTestJpegBuffer({ r: i * 50, g: 100, b: 150 });
       const form = new FormData();
       form.append('playerId', playerId);
@@ -160,16 +176,46 @@ async function main() {
         body: form,
       });
       const data = await res.json();
-      assert(res.ok, `${label} upload ${i + 1}/3 succeeded (${JSON.stringify(data)})`);
+      assert(res.ok, `${label} upload ${i + 1}/${PHOTOS} succeeded (${JSON.stringify(data)})`);
     }
   }
 
+  assert(
+    states.Alice.uploadStatus.every((u) => u.required === PHOTOS),
+    `each player is required to upload ${PHOTOS} photos`
+  );
+  alice.emit('startVoting');
+  await wait(300);
+  assert(states.Alice.status === 'uploading', 'host cannot start voting with zero photos uploaded');
+
   console.log('--- Uploading round 1 photos for both players ---');
   await uploadPhotos(aliceId, 'alice-r1');
+  await wait(300);
+  assert(
+    states.Alice.uploadStatus.find((u) => u.id === aliceId).count === PHOTOS &&
+      states.Alice.uploadStatus.find((u) => u.id === bobId).count === 0,
+    'upload progress shows Alice finished and Bob not yet'
+  );
   await uploadPhotos(bobId, 'bob-r1');
   await wait(500);
 
-  assert(states.Alice.status === 'voting', 'status moved to voting after round 1 uploads');
+  // Extra uploads beyond the host's chosen number are refused.
+  {
+    const buf = await makeTestJpegBuffer({ r: 9, g: 9, b: 9 });
+    const form = new FormData();
+    form.append('playerId', aliceId);
+    form.append('photo', buf, { filename: 'extra.jpg', contentType: 'image/jpeg' });
+    const res = await fetch('http://localhost:3000/api/upload', { method: 'POST', body: form });
+    assert(res.ok === false, `upload beyond ${PHOTOS} photos is rejected`);
+  }
+
+  assert(states.Alice.status === 'uploading', 'voting does NOT start automatically when everyone has uploaded');
+  bob.emit('startVoting');
+  await wait(300);
+  assert(states.Alice.status === 'uploading', 'non-host cannot start voting');
+  alice.emit('startVoting');
+  await wait(500);
+  assert(states.Alice.status === 'voting', 'host starting voting moves the game to voting');
   assert(states.Alice.currentPhoto !== null, 'a current photo is set');
 
   // Votes on every currently-shown photo until `predicate()` is true (used for
@@ -198,17 +244,17 @@ async function main() {
     return votedCount;
   }
 
-  console.log('--- Voting through round 1 (6 photos) ---');
+  console.log('--- Voting through round 1 (4 photos) ---');
   const round1Votes = await voteUntil(() => states.Alice.status === 'lobby-between-rounds');
-  assert(round1Votes === 6, `voted on exactly 6 photos in round 1 (voted on ${round1Votes})`);
+  assert(round1Votes === 2 * PHOTOS, `voted on exactly ${2 * PHOTOS} photos in round 1 (voted on ${round1Votes})`);
   assert(states.Alice.status === 'lobby-between-rounds', 'reached the new between-rounds screen after round 1');
 
-  // Alice's photos: Bob votes 2 each => 2*1(mult)=2 per photo * 3 photos = 6
-  // Bob's photos: Alice votes 4 each => 4*1(mult)=4 per photo * 3 photos = 12
+  // Alice's photos: Bob votes 2 each => 2*1(mult)=2 per photo * PHOTOS(2) = 4
+  // Bob's photos: Alice votes 4 each => 4*1(mult)=4 per photo * PHOTOS(2) = 8
   const aliceAfterR1 = states.Alice.players.find((p) => p.id === aliceId).totalScore;
   const bobAfterR1 = states.Alice.players.find((p) => p.id === bobId).totalScore;
-  assert(aliceAfterR1 === 6, `Alice's score after round 1 is 6 (got ${aliceAfterR1})`);
-  assert(bobAfterR1 === 12, `Bob's score after round 1 is 12 (got ${bobAfterR1})`);
+  assert(aliceAfterR1 === 2 * PHOTOS, `Alice's score after round 1 is ${2 * PHOTOS} (got ${aliceAfterR1})`);
+  assert(bobAfterR1 === 4 * PHOTOS, `Bob's score after round 1 is ${4 * PHOTOS} (got ${bobAfterR1})`);
 
   console.log('--- Testing kick permissions ---');
   bob.emit('kickPlayer', aliceId); // non-host attempting to kick: should be ignored
@@ -242,23 +288,30 @@ async function main() {
 
   await uploadPhotos(aliceId, 'alice-r2');
   await wait(500);
-  assert(states.Alice.status === 'voting', 'status moved to voting for round 2 (Alice-only)');
+  alice.emit('startVoting');
+  await wait(500);
+  assert(states.Alice.status === 'voting', 'host started voting for round 2 (Alice-only)');
 
-  console.log('--- Voting through round 2 (3 photos, zero eligible voters -> times out each photo) ---');
+  console.log('--- Voting through round 2 (2 photos, zero eligible voters -> times out each photo) ---');
   const round2Votes = await voteUntil(() => states.Alice.status === 'gameover');
-  assert(round2Votes === 3, `voted on exactly 3 photos in round 2 (voted on ${round2Votes})`);
+  assert(round2Votes === PHOTOS, `voted on exactly ${PHOTOS} photos in round 2 (voted on ${round2Votes})`);
   assert(states.Alice.status === 'gameover', 'game reached gameover after round 2');
   assert(Array.isArray(states.Alice.leaderboard), 'leaderboard is present');
 
   console.log('--- Final leaderboard ---');
   console.log(states.Alice.leaderboard);
 
-  // Round 2: Alice owns all 3 photos and is the only player left, so there are
+  // Round 2: Alice owns all her photos and is the only player left, so there are
   // zero eligible voters for each - each photo earns 0 points (and each one
   // waits out the full 5s timer rather than early-closing).
   assert(states.Alice.leaderboard.length === 1, 'leaderboard only contains Alice (Bob was kicked)');
   const aliceFinalScore = states.Alice.leaderboard.find((p) => p.username === 'Alice').totalScore;
-  assert(aliceFinalScore === 6, `Alice's final score is still 6 from round 1 (got ${aliceFinalScore})`);
+  assert(aliceFinalScore === 2 * PHOTOS, `Alice's final score is still ${2 * PHOTOS} from round 1 (got ${aliceFinalScore})`);
+
+  console.log('--- Testing that leaving is ignored outside the pre-game lobby ---');
+  alice.emit('leaveGame');
+  await wait(300);
+  assert(states.Alice.players.length === 1 && states.Alice.status === 'gameover', 'leaveGame ignored at game over');
 
   console.log('--- Testing newGame cleanup ---');
   alice.emit('newGame');
@@ -274,7 +327,37 @@ async function main() {
   const remainingFiles = fs.readdirSync(photosDir);
   assert(remainingFiles.length === 0, `photo directory is empty after newGame (found ${remainingFiles.length})`);
 
-  alice.disconnect();
+  console.log('--- Testing leaving the pre-game lobby ---');
+  const zedConn = await connectPlayer('Zed');
+  const zed = zedConn.sock;
+  await wait(300);
+  assert(states.Alice.players.length === 2, 'Zed joined the lobby');
+  let zedLeft = false;
+  zed.on('left', () => (zedLeft = true));
+  zed.emit('leaveGame');
+  await wait(400);
+  assert(zedLeft === true, 'Zed received the "left" event');
+  assert(zed.connected === false, "Zed's socket was disconnected after leaving");
+  assert(states.Alice.players.length === 1, 'Zed removed from the player list');
+  assert(
+    states.Alice.players[0].username === 'Alice' && states.Alice.players[0].isHost === true,
+    'host unchanged when a non-host leaves'
+  );
+
+  console.log('--- Testing host handoff when the host leaves ---');
+  const zed2Conn = await connectPlayer('Zed2');
+  await wait(300);
+  assert(states.Alice.players.length === 2, 'Zed2 joined, lobby has 2 players');
+  let aliceLeft = false;
+  alice.on('left', () => (aliceLeft = true));
+  alice.emit('leaveGame');
+  await wait(400);
+  assert(aliceLeft === true, 'host Alice received the "left" event');
+  assert(states.Zed2.players.length === 1, 'only Zed2 remains after the host left');
+  assert(states.Zed2.players[0].isHost === true, 'host status passed to Zed2');
+  assert(states.Zed2.hostId === zed2Conn.playerId, 'hostId updated to Zed2');
+
+  zed2Conn.sock.disconnect();
   bob.disconnect();
   server.kill();
   await wait(200);

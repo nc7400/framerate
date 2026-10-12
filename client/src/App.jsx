@@ -14,6 +14,7 @@ export default function App() {
   const [state, setState] = useState(null);
   const [myId] = useState(getStoredPlayerId); // stable for the life of this browser, not tied to socket.id
   const [kicked, setKicked] = useState(false);
+  const [left, setLeft] = useState(false);
 
   useEffect(() => {
     function attemptAutoRejoin() {
@@ -32,11 +33,16 @@ export default function App() {
       clearStoredIdentity();
       setKicked(true);
     }
+    function handleLeft() {
+      clearStoredIdentity();
+      setLeft(true);
+    }
 
     socket.on('connect', attemptAutoRejoin);
     socket.on('joined', handleJoined);
     socket.on('state', handleState);
     socket.on('kicked', handleKicked);
+    socket.on('left', handleLeft);
     // Note: 'joinError' is handled directly inside JoinScreen, since that's
     // the component with the "submitted" state that needs to un-stick.
 
@@ -49,6 +55,7 @@ export default function App() {
       socket.off('joined', handleJoined);
       socket.off('state', handleState);
       socket.off('kicked', handleKicked);
+      socket.off('left', handleLeft);
     };
   }, [myId]);
 
@@ -58,6 +65,16 @@ export default function App() {
         <h1>Removed from game</h1>
         <p>The host removed you from this game.</p>
         <button onClick={() => window.location.reload()}>Rejoin as a new player</button>
+      </div>
+    );
+  }
+
+  if (left) {
+    return (
+      <div className="screen">
+        <h1>You left the game</h1>
+        <p>You've been removed from the player list.</p>
+        <button onClick={() => window.location.reload()}>Join again</button>
       </div>
     );
   }
