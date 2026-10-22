@@ -223,7 +223,6 @@ button:disabled {
   border-radius: 10px;
   padding: 14px 16px;
   font-size: 18px;
-  gap: 12px;
 }
 
 .leaderboard .rank {
@@ -239,7 +238,6 @@ button:disabled {
 
 .leaderboard .score {
   font-weight: bold;
-  white-space: nowrap;
 }
 
 .kick-button {
@@ -332,7 +330,9 @@ button:disabled {
 
 /* ---------- Ties, best-photo showcases ---------- */
 
-
+.leaderboard li {
+  gap: 12px;
+}
 
 .leaderboard .name .member {
   display: block;
@@ -340,6 +340,10 @@ button:disabled {
 
 .leaderboard .name .member + .member {
   margin-top: 6px;
+}
+
+.leaderboard .score {
+  white-space: nowrap;
 }
 
 .leaderboard .name .kick-button {
@@ -385,4 +389,75 @@ button:disabled {
 
 .best-photo-grid.tie .points {
   font-size: 18px;
+}
+
+/* ---------- Upload screen: thumbnails with Replace buttons ---------- */
+
+.my-photos {
+  width: 100%;
+}
+
+.thumb-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 12px;
+}
+
+.thumb {
+  width: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.thumb img {
+  width: 96px;
+  height: 96px;
+  object-fit: cover;
+  border-radius: 8px;
+  background: #000;
+}
+
+.thumb-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.replace-button {
+  display: inline-block;
+  padding: 6px 12px;
+  font-size: 13px;
+  border: 1px solid var(--muted);
+  border-radius: 8px;
+  color: var(--text);
+}
+
+/* ---------- End-of-game round-by-round recap ---------- */
+
+.round-breakdown {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.breakdown-round {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  background: var(--surface);
+  border-radius: 12px;
+  padding: 16px;
+}
+
+.breakdown-round h3 {
+  margin: 0;
+  font-size: 20px;
 }

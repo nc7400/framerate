@@ -16,9 +16,7 @@ export default function PhotoResult({ state }) {
                 <div className="best-photo-item" key={photo.url}>
                   <img className="result-photo" src={photo.url} alt={`${photo.ownerUsername}'s photo`} />
                   <p className="points">{photo.ownerUsername}</p>
-                  <p className="hint">
-                    {photo.points} points · average {photo.average.toFixed(1)}/5
-                  </p>
+                  <p className="hint">{photo.points} points</p>
                 </div>
               ))}
             </div>

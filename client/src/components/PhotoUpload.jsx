@@ -4,6 +4,7 @@ import { socket } from '../socket';
 export default function PhotoUpload({ state, isHost, myId }) {
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
+  const [replacingId, setReplacingId] = useState(null); // which thumbnail is mid-replace
 
   const myStatus = state.uploadStatus.find((u) => u.id === myId);
   const myCount = myStatus ? myStatus.count : 0;
@@ -11,18 +12,19 @@ export default function PhotoUpload({ state, isHost, myId }) {
   const done = myCount >= required;
   const allDone = state.uploadStatus.every((u) => u.count >= u.required);
   const totalUploaded = state.uploadStatus.reduce((sum, u) => sum + u.count, 0);
+  const myPhotos = state.myPhotos || [];
 
-  async function handleFileChange(e) {
-    const file = e.target.files[0];
-    e.target.value = ''; // allow re-selecting the same file name later
-    if (!file) return;
-
+  // Sends a photo to the server. With a replaceId it swaps that photo for the new
+  // file (same position); without one it's a brand-new upload.
+  async function sendPhoto(file, replaceId) {
     setUploading(true);
+    setReplacingId(replaceId || null);
     setError('');
     try {
       const formData = new FormData();
       formData.append('photo', file);
       formData.append('playerId', myId);
+      if (replaceId) formData.append('replaceId', replaceId);
 
       const res = await fetch('/api/upload', {
         method: 'POST',
@@ -36,7 +38,22 @@ export default function PhotoUpload({ state, isHost, myId }) {
       setError(err.message);
     } finally {
       setUploading(false);
+      setReplacingId(null);
     }
+  }
+
+  async function handleFileChange(e) {
+    const file = e.target.files[0];
+    e.target.value = ''; // allow re-selecting the same file name later
+    if (!file) return;
+    await sendPhoto(file);
+  }
+
+  async function handleReplaceChange(photoId, e) {
+    const file = e.target.files[0];
+    e.target.value = '';
+    if (!file) return;
+    await sendPhoto(file, photoId);
   }
 
   return (
@@ -60,6 +77,30 @@ export default function PhotoUpload({ state, isHost, myId }) {
       )}
       {done && <p>You're all set — waiting on other players...</p>}
       {error && <p className="error">{error}</p>}
+
+      {myPhotos.length > 0 && (
+        <div className="my-photos">
+          <h2>Your photos</h2>
+          <ul className="thumb-list">
+            {myPhotos.map((photo, i) => (
+              <li key={photo.id} className="thumb">
+                <img src={photo.url} alt={`Your photo ${i + 1}`} />
+                <span className="thumb-label">Photo {i + 1}</span>
+                <label className="replace-button">
+                  {replacingId === photo.id ? 'Replacing...' : 'Replace'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => handleReplaceChange(photo.id, e)}
+                    disabled={uploading}
+                    hidden
+                  />
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="upload-status-list">
         <h2>Everyone's progress</h2>

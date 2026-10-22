@@ -119,15 +119,26 @@ npm test
   A disconnected player stays visible in the lobby/player list (marked
   "disconnected") rather than disappearing.
 - **Ties and medals**: players with the same score share one rank and are
-  listed together, separated by commas. First place gets 🥇, second 🥈, third 🥉
+  listed together, one name per line. First place gets 🥇, second 🥈, third 🥉
   (ranks are consecutive, so a tie for first is followed by the 🥈 group).
+- **Replacing photos**: during the upload phase each player sees thumbnails of
+  their own uploaded photos (labelled Photo 1, 2, ...) with a Replace button
+  under each. Replacing swaps that photo for a new one in the same position
+  and deletes the old file. Only you ever see your own thumbnails; other
+  players' photos stay secret until voting. Replacing is closed once the host
+  starts voting.
 - **Best photos**: at the end of every round (including the final one), the
   round's best photo is shown to everyone. That's the photo with the most
   points that round, and if several photos are tied for the top score, all of
-  them are shown. Photos nobody voted on never count. After the last round,
-  the final screen shows the best-rated photo of each first-place player,
-  where "best rated" means the highest average rating (ties go to the photo
-  with more votes, then the one shown first).
+  them are shown. Photos nobody voted on never count. Only the points a photo
+  scored are shown (no averages).
+- **End-of-game screen**: after the final standings it shows the winner's
+  top-scoring photo (the single photo of theirs that earned the most points,
+  with its points and round; one per player if first place is tied), followed
+  by a round-by-round recap: for each round, the title ("Round N"), who
+  uploaded the highest-scoring photo, the points it scored, and the photo
+  (several if tied). Note that later rounds are worth more points per vote, so
+  a winner's top photo tends to come from a later round.
 - **Final round**: after the last round the screen says the game is over and
   final scores are coming, instead of "get ready for the next round".
 - **Between rounds**: after each round (except the last), everyone sees a

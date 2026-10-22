@@ -1,5 +1,6 @@
 const { spawn } = require('child_process');
 const path = require('path');
+const fs = require('fs');
 const { io } = require('socket.io-client');
 const sharp = require('sharp');
 const FormData = require('form-data');
@@ -200,9 +201,26 @@ async function main() {
   await wait(300);
   assert(states.Alice.status === 'uploading', 'host cannot start voting with zero photos uploaded');
 
+  // Uploads (or replaces, when replaceId is given) one photo; returns the response.
+  async function uploadOne(playerId, label, replaceId) {
+    const buf = await makeTestJpegBuffer({ r: Math.floor(Math.random() * 255), g: 80, b: 120 });
+    const form = new FormData();
+    form.append('playerId', playerId);
+    if (replaceId) form.append('replaceId', replaceId);
+    form.append('photo', buf, { filename: `${label}.jpg`, contentType: 'image/jpeg' });
+    return fetch('http://localhost:3000/api/upload', { method: 'POST', body: form });
+  }
+  const photoFileExists = (url) => fs.existsSync(path.join(__dirname, 'game-photos', path.basename(url)));
+
   console.log('--- Uploading round 1 photos for both players ---');
   await uploadPhotos(aliceId, 'alice-r1');
   await wait(300);
+  assert(states.Alice.myPhotos.length === PHOTOS, `Alice sees her own ${PHOTOS} uploaded photos (for thumbnails)`);
+  assert(states.Bob.myPhotos.length === 0, "Bob's own photo list is empty (he hasn't uploaded)");
+  assert(
+    !JSON.stringify(states.Bob).includes(states.Alice.myPhotos[0].url),
+    "Alice's photos are NOT visible in Bob's state (kept secret until voting)"
+  );
   assert(
     states.Alice.uploadStatus.find((u) => u.id === aliceId).count === PHOTOS &&
       states.Alice.uploadStatus.find((u) => u.id === bobId).count === 0,
@@ -210,6 +228,28 @@ async function main() {
   );
   await uploadPhotos(bobId, 'bob-r1');
   await wait(500);
+
+  console.log('--- Replacing uploaded photos ---');
+  assert(states.Bob.myPhotos.length === PHOTOS, `Bob sees his own ${PHOTOS} photos`);
+  const aliceBefore = states.Alice.myPhotos.map((p) => ({ ...p }));
+  const countBefore = states.Alice.uploadStatus.find((u) => u.id === aliceId).count;
+  const replaceRes = await uploadOne(aliceId, 'alice-replacement', aliceBefore[0].id);
+  assert(replaceRes.ok, 'replacing one of your own photos succeeds');
+  await wait(300);
+  assert(states.Alice.myPhotos.length === PHOTOS, 'still the same number of photos after a replace');
+  assert(states.Alice.myPhotos[0].url !== aliceBefore[0].url, 'the replaced photo has a new image');
+  assert(states.Alice.myPhotos[1].id === aliceBefore[1].id, 'her other photos are untouched');
+  assert(
+    states.Alice.uploadStatus.find((u) => u.id === aliceId).count === countBefore,
+    'a replace does not change the uploaded count'
+  );
+  assert(!photoFileExists(aliceBefore[0].url), 'the replaced photo file was deleted from disk');
+  assert(photoFileExists(states.Alice.myPhotos[0].url), 'the new photo file exists on disk');
+
+  const stealRes = await uploadOne(bobId, 'bob-steals', states.Alice.myPhotos[1].id);
+  assert(stealRes.ok === false, "a player cannot replace someone else's photo");
+  const ghostRes = await uploadOne(aliceId, 'ghost', 'not-a-real-photo-id');
+  assert(ghostRes.ok === false, 'replacing a photo that does not exist is rejected');
 
   // Extra uploads beyond the host's chosen number are refused.
   {
@@ -229,6 +269,9 @@ async function main() {
   await wait(500);
   assert(states.Alice.status === 'voting', 'host starting voting moves the game to voting');
   assert(states.Alice.currentPhoto !== null, 'a current photo is set');
+  assert(states.Alice.myPhotos.length === 0, 'the upload thumbnails are gone once voting starts');
+  const lateRes = await uploadOne(aliceId, 'too-late', states.Alice.currentPhoto.id);
+  assert(lateRes.ok === false, 'photos cannot be replaced once voting has started');
 
   // Votes on every currently-shown photo until `predicate()` is true (used for
   // both rounds). Alice votes 4 on anything she doesn't own, Bob votes 2 (while
@@ -327,9 +370,19 @@ async function main() {
     'winner photo is shown for the single first-place player'
   );
   assert(
-    states.Alice.winnerPhotos[0].round === 1 && Math.abs(states.Alice.winnerPhotos[0].average - 2) < 1e-9,
-    "winner's best photo comes from round 1 (the only round her photos were rated), average 2"
+    states.Alice.winnerPhotos[0].round === 1 && states.Alice.winnerPhotos[0].points === 2,
+    "winner's top photo comes from round 1 (the only round her photos were rated) and shows its 2 points"
   );
+
+  const breakdown = states.Alice.roundBreakdown;
+  assert(breakdown.length === 2, 'the end-of-game recap covers both rounds');
+  assert(
+    breakdown[0].round === 1 && breakdown[0].photos.length === PHOTOS &&
+      breakdown[0].photos.every((b) => b.ownerUsername === 'Bobby' && b.points === 4 && b.url),
+    "round 1 recap lists Bobby's tied best photos with uploader, points and photo"
+  );
+  assert(breakdown[1].round === 2 && breakdown[1].photos.length === 0, 'round 2 recap has no rated photos');
+  assert(!JSON.stringify(states.Alice).includes('"average"'), 'no average rating is sent to clients anymore');
 
   console.log('--- Final leaderboard ---');
   console.log(states.Alice.leaderboard);
@@ -355,10 +408,10 @@ async function main() {
     'scores reset to 0 after newGame'
   );
 
-  const fs = require('fs');
   const photosDir = path.join(__dirname, 'game-photos');
   const remainingFiles = fs.readdirSync(photosDir);
   assert(states.Alice.winnerPhotos.length === 0, 'winner photos cleared by newGame');
+  assert(states.Alice.roundBreakdown.length === 0, 'round recap cleared by newGame');
   assert(remainingFiles.length === 0, `photo directory is empty after newGame (found ${remainingFiles.length})`);
 
   console.log('--- Testing leaving the pre-game lobby ---');

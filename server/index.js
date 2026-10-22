@@ -52,7 +52,8 @@ let uploadCounts = {};   // playerId -> number of photos uploaded this round
 let lastResult = null;   // { photoUrl, ownerUsername, pointsAwarded }
 let leaderboard = null;  // sorted players array, set at gameover
 let gamePhotoResults = []; // every photo's final tally this game (kept across rounds)
-let winnerPhotos = [];   // best-rated photo of each first-place player, set at gameover
+let winnerPhotos = [];   // top-scoring photo of each first-place player, set at gameover
+let roundBreakdown = []; // per-round best photo(s), set at gameover
 
 function getPlayer(id) {
   return players.find((p) => p.id === id);
@@ -93,6 +94,7 @@ function resetFullGameState({ clearPlayers } = { clearPlayers: false }) {
   leaderboard = null;
   gamePhotoResults = [];
   winnerPhotos = [];
+  roundBreakdown = [];
   resetPerRoundState();
   if (clearPlayers) {
     players = [];
@@ -124,6 +126,7 @@ function buildStateSnapshot() {
     lastResult,
     leaderboard,
     winnerPhotos,
+    roundBreakdown,
     photosRemainingInRound: photoQueue.length + (currentPhoto ? 1 : 0),
     uploadStatus: players.map((p) => ({
       id: p.id,
@@ -134,8 +137,30 @@ function buildStateSnapshot() {
   };
 }
 
+// A player's own photos for the current round's upload phase. Only that player
+// is ever sent these (everyone else's stay secret until voting), so each socket
+// gets its own copy of the state with `myPhotos` filled in.
+function photosOf(playerId) {
+  if (status !== 'uploading') return [];
+  return photoQueue
+    .filter((p) => p.ownerId === playerId && p.roundAssigned === currentRound)
+    .map((p) => ({ id: p.id, url: p.url }));
+}
+
 function broadcastState() {
-  io.emit('state', buildStateSnapshot());
+  const base = buildStateSnapshot();
+  for (const [socketId, sock] of io.sockets.sockets) {
+    const player = getPlayerBySocket(socketId);
+    sock.emit('state', { ...base, myPhotos: player ? photosOf(player.id) : [] });
+  }
+}
+
+function deletePhotoFile(url) {
+  try {
+    fs.unlinkSync(path.join(PHOTOS_DIR, path.basename(url)));
+  } catch (err) {
+    // already gone - nothing to clean up
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -196,20 +221,15 @@ function checkForEarlyClose() {
   }
 }
 
-// "Best rated" = highest average rating; ties go to the photo with more votes,
-// then to whichever was shown first. Photos nobody voted on are never "best".
-function isBetterPhoto(a, b) {
-  const lhs = a.rawTotal * b.voteCount; // compare averages without float rounding
-  const rhs = b.rawTotal * a.voteCount;
-  if (lhs !== rhs) return lhs > rhs;
-  return a.voteCount > b.voteCount;
-}
-
-function pickBestPhoto(candidates) {
+// A player's single top photo = the one that scored the most points; ties go to the
+// photo with more votes, then to whichever was shown first. Unrated photos never count.
+function pickTopPhotoByPoints(candidates) {
   let best = null;
   for (const c of candidates) {
     if (c.voteCount === 0) continue;
-    if (!best || isBetterPhoto(c, best)) best = c;
+    if (!best || c.points > best.points || (c.points === best.points && c.voteCount > best.voteCount)) {
+      best = c;
+    }
   }
   return best;
 }
@@ -242,7 +262,6 @@ function closeCurrentPhotoVoting() {
   }
 
   const voteValues = Object.values(votes);
-  const rawTotal = voteValues.reduce((sum, v) => sum + v, 0);
   gamePhotoResults.push({
     url: currentPhoto.url,
     ownerId: currentPhoto.ownerId,
@@ -250,8 +269,6 @@ function closeCurrentPhotoVoting() {
     round: currentRound,
     points: pointsAwarded,
     voteCount: voteValues.length,
-    rawTotal,
-    average: voteValues.length ? rawTotal / voteValues.length : 0,
   });
 
   lastResult = {
@@ -285,8 +302,6 @@ function endRound() {
       url: r.url,
       ownerUsername: r.ownerUsername,
       points: r.points,
-      average: r.average,
-      voteCount: r.voteCount,
     })),
   };
   broadcastState();
@@ -314,19 +329,25 @@ function endGame() {
       ? players
           .filter((p) => p.totalScore === topScore)
           .map((p) => {
-            const best = pickBestPhoto(gamePhotoResults.filter((r) => r.ownerId === p.id));
+            const best = pickTopPhotoByPoints(gamePhotoResults.filter((r) => r.ownerId === p.id));
             return best
-              ? {
-                  username: p.username,
-                  url: best.url,
-                  average: best.average,
-                  voteCount: best.voteCount,
-                  round: best.round,
-                }
+              ? { username: p.username, url: best.url, points: best.points, round: best.round }
               : null;
           })
           .filter(Boolean)
       : [];
+
+  // Round-by-round recap: the best photo(s) of every round that had photos
+  // (all of them if tied), with who uploaded it and the points it scored.
+  const roundsWithPhotos = [...new Set(gamePhotoResults.map((r) => r.round))].sort((a, b) => a - b);
+  roundBreakdown = roundsWithPhotos.map((round) => ({
+    round,
+    photos: pickBestPhotosOfRound(round).map((r) => ({
+      url: r.url,
+      ownerUsername: r.ownerUsername,
+      points: r.points,
+    })),
+  }));
 
   status = 'gameover';
   resetPerRoundState();
@@ -338,15 +359,27 @@ function endGame() {
 // ---------------------------------------------------------------------------
 
 app.post('/api/upload', upload.single('photo'), async (req, res) => {
+  let newFilePath = null;
   try {
-    const { playerId } = req.body;
+    const { playerId, replaceId } = req.body;
     if (!playerId || !getPlayer(playerId)) {
       return res.status(400).json({ error: 'Unknown player' });
     }
     if (status !== 'uploading') {
       return res.status(400).json({ error: 'Not currently accepting uploads' });
     }
-    if ((uploadCounts[playerId] || 0) >= photosPerRound) {
+
+    // A "replace" swaps one of this player's own photos from the current round
+    // for a new file, in the same position. Anything else is a brand-new upload.
+    const isReplace = Boolean(replaceId);
+    const findOwnPhoto = () =>
+      photoQueue.find(
+        (p) => p.id === replaceId && p.ownerId === playerId && p.roundAssigned === currentRound
+      );
+    if (isReplace && !findOwnPhoto()) {
+      return res.status(400).json({ error: 'Photo to replace was not found' });
+    }
+    if (!isReplace && (uploadCounts[playerId] || 0) >= photosPerRound) {
       return res.status(400).json({ error: 'Already uploaded max photos this round' });
     }
     if (!req.file) {
@@ -355,7 +388,7 @@ app.post('/api/upload', upload.single('photo'), async (req, res) => {
 
     const id = uuidv4();
     const filename = `${id}.jpg`;
-    const filePath = path.join(PHOTOS_DIR, filename);
+    newFilePath = path.join(PHOTOS_DIR, filename);
 
     await sharp(req.file.buffer)
       .rotate() // auto-orient using the image's EXIF data, then strip it — without
@@ -363,7 +396,33 @@ app.post('/api/upload', upload.single('photo'), async (req, res) => {
       // phones store "which way is up" as metadata rather than rotating pixels.
       .resize({ width: 1280, height: 1280, fit: 'inside', withoutEnlargement: true })
       .jpeg({ quality: 72 })
-      .toFile(filePath);
+      .toFile(newFilePath);
+
+    // Compression is async, so things may have changed while it ran (e.g. the host
+    // started voting). Re-check before touching any game state.
+    if (status !== 'uploading') {
+      deletePhotoFile(filename);
+      return res.status(400).json({ error: 'Uploads closed while this photo was processing' });
+    }
+
+    if (isReplace) {
+      const target = findOwnPhoto();
+      if (!target) {
+        deletePhotoFile(filename);
+        return res.status(400).json({ error: 'Photo to replace was not found' });
+      }
+      const oldUrl = target.url;
+      target.id = id;
+      target.url = `/photos/${filename}`;
+      deletePhotoFile(oldUrl);
+      broadcastState();
+      return res.json({ ok: true, replaced: true, count: uploadCounts[playerId] || 0 });
+    }
+
+    if ((uploadCounts[playerId] || 0) >= photosPerRound) {
+      deletePhotoFile(filename);
+      return res.status(400).json({ error: 'Already uploaded max photos this round' });
+    }
 
     photoQueue.push({
       id,
@@ -378,6 +437,7 @@ app.post('/api/upload', upload.single('photo'), async (req, res) => {
     res.json({ ok: true, count: uploadCounts[playerId] });
   } catch (err) {
     console.error('Upload failed:', err);
+    if (newFilePath) deletePhotoFile(path.basename(newFilePath));
     res.status(500).json({ error: 'Upload failed' });
   }
 });
